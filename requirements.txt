@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+pydantic
+requests
+yt-dlp
+spacy
+numpy
+httpx
+opencv-python-headless
+pytesseract
+openai-whisper
+torch
+torchvision
+torchaudio
+ffmpeg-python
+python-multipart
+python-dotenv
