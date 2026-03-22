@@ -12,9 +12,9 @@ ffmpeg-python
 python-multipart
 python-dotenv
 openai-whisper
-torch==2.1.0+cpu
-torchvision==0.15.2+cpu
-torchaudio==2.1.2+cpu
+torch>=2.1.0
+torchvision>=0.15.2
+torchaudio>=2.1.2
 
-# Optional: if CPU-only torch wheel needs explicit index
-# -f https://download.pytorch.org/whl/cpu/torch_stable.html
+# (Optional CPU-only custom index if needed):
+# pip install --no-cache-dir -r requirements.txt -f https://download.pytorch.org/whl/cpu/torch_stable.html
