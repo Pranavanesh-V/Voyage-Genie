@@ -1,9 +1,9 @@
 fastapi
 uvicorn[standard]
-pydantic<2.0
+pydantic==1.10.13
 requests
 yt-dlp
-spacy<4.0
+spacy==3.7.2
 numpy
 httpx
 opencv-python-headless
