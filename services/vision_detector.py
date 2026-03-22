@@ -1,9 +1,6 @@
 import os
 import logging
 from typing import List
-
-import torch
-from torchvision import models, transforms
 from PIL import Image
 
 # ---------------- LOGGING ---------------- #
@@ -13,23 +10,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ---------------- MODEL SETUP ---------------- #
-try:
-    # General scene recognition (ResNet50 pretrained on ImageNet)
-    model = models.mobilenet_v2(weights="DEFAULT")
-    model.eval()
-    logger.info("ResNet50 model loaded successfully.")
-except Exception as e:
-    logger.error(f"Failed to load ResNet50 model: {e}")
-    raise RuntimeError("Could not load vision model.")
-
-# Preprocessing pipeline
-preprocess = transforms.Compose([
-    transforms.Resize(256),
-    transforms.CenterCrop(224),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
+# Vision model is optional and currently function returns mock results
+# to keep 512MB Render free tier safe. If needed, one can re-enable
+# a lightweight model load here with explicit CPU-only settings.
 
 
 # ---------------- SCENE DETECTION ---------------- #
@@ -53,17 +36,9 @@ def detect_scenes(frames_dir: str) -> List[str]:
         frame_path = os.path.join(frames_dir, frame_name)
 
         try:
-            input_image = Image.open(frame_path)
-            input_tensor = preprocess(input_image)
-            input_batch = input_tensor.unsqueeze(0)
-
-            with torch.no_grad():
-                output = model(input_batch)
-
-            # Here you would map ImageNet classes to travel categories
-            # For now, this is mocked for pipeline purposes
-            # detected_labels.append(mapped_label)
-            pass
+            # Keep simple for low-memory environments: no model inference.
+            # You may replace with a lightweight pre-trained model if needed.
+            _ = Image.open(frame_path)
 
         except Exception as e:
             logger.error(f"Vision processing error on '{frame_name}': {e}")

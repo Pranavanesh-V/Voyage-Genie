@@ -1,5 +1,5 @@
 fastapi
-uvicorn
+uvicorn[standard]
 pydantic
 requests
 yt-dlp
@@ -8,10 +8,13 @@ numpy
 httpx
 opencv-python-headless
 pytesseract
-openai-whisper
-torch
-torchvision
-torchaudio
 ffmpeg-python
 python-multipart
 python-dotenv
+openai-whisper
+torch==2.1.0+cpu
+torchvision==0.15.2+cpu
+torchaudio==2.1.2+cpu
+
+# Optional: if CPU-only torch wheel needs explicit index
+# -f https://download.pytorch.org/whl/cpu/torch_stable.html

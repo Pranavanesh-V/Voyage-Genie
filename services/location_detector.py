@@ -44,10 +44,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ---------------- SPACY ---------------- #
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    raise RuntimeError("Run: python -m spacy download en_core_web_sm")
+_nlp = None
+
+def get_nlp():
+    global _nlp
+    if _nlp is None:
+        try:
+            _nlp = spacy.load("en_core_web_sm")
+        except OSError:
+            raise RuntimeError("Run: python -m spacy download en_core_web_sm")
+    return _nlp
 
 
 # ---------------- HELPERS ---------------- #
@@ -92,7 +98,7 @@ def find_locations_in_text(text: str) -> Dict[str, Optional[List[str]]]:
         return {"places": [], "context": None}
 
     text = re.sub(r'\s+', ' ', text)
-    doc = nlp(text)
+    doc = get_nlp()(text)
 
     extracted: List[str] = []
 
