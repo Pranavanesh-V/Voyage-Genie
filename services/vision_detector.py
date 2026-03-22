@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # ---------------- MODEL SETUP ---------------- #
 try:
     # General scene recognition (ResNet50 pretrained on ImageNet)
-    model = models.resnet50(pretrained=True)
+    model = models.mobilenet_v2(weights="DEFAULT")
     model.eval()
     logger.info("ResNet50 model loaded successfully.")
 except Exception as e:

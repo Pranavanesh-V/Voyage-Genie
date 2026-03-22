@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 # ---------------- LOAD WHISPER MODEL ---------------- #
 # Load once for the entire module (base model balances speed & accuracy)
 try:
-    model = whisper.load_model("base")
+    model = whisper.load_model("tiny")
     logger.info("Whisper model loaded successfully.")
 except Exception as e:
     logger.error(f"Failed to load Whisper model: {e}")
