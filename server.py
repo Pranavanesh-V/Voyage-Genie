@@ -1,12 +1,12 @@
-import logging
 import uuid
+import logging
 from typing import List, Optional
-
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from services.metadata_extractor import extract_metadata
 from services.location_detector import find_locations_in_text
+from services.geo_validator import validate_locations  # <-- your updated validator
 
 # ---------------- LOGGING ---------------- #
 logging.basicConfig(
@@ -22,11 +22,16 @@ app = FastAPI(title="VoyageGenie Reel Analytics API")
 class ReelRequest(BaseModel):
     reelUrl: str
 
+
 class Place(BaseModel):
     name: str
     city: Optional[str] = ""
     state: Optional[str] = ""
     country: Optional[str] = ""
+    latitude: float
+    longitude: float
+    confidence: float
+
 
 class ReelResponse(BaseModel):
     caption: str
@@ -34,17 +39,8 @@ class ReelResponse(BaseModel):
     detected_locations: List[str]
     validated_places: List[Place]
 
-# ------------------ UTILITIES ------------------ #
-def format_place_name(place):
-    """Combine name, city, country for display."""
-    parts = [place.get("name", "")]
-    if place.get("city"):
-        parts.append(place["city"])
-    if place.get("country"):
-        parts.append(place["country"])
-    return ", ".join(parts)
 
-# ------------------ API ENDPOINTS ------------------ #
+# ------------------ API ------------------ #
 @app.post("/process-reel", response_model=ReelResponse)
 async def process_reel(request: ReelRequest):
     try:
@@ -56,25 +52,20 @@ async def process_reel(request: ReelRequest):
         # 2. Detect locations from caption + hashtags
         combined_text = f"{caption} {' '.join(hashtags)}"
         location_data = find_locations_in_text(combined_text)
-        detected_locations = location_data.get("places", [])
+        detected_locations = location_data.get("places", [])  # list of strings
         location_context = location_data.get("context", "")
 
-        # 3. Format validated places
-        validated_places = [
-            Place(
-                name=format_place_name(place),
-                city=place.get("city", ""),
-                state=place.get("state", ""),
-                country=place.get("country", "")
-            )
-            for place in detected_locations
-        ]
+        # 3. Validate locations asynchronously using your Nominatim validator
+        validated_places_data = await validate_locations(detected_locations, location_context)
 
-        # 4. Return results
+        # 4. Convert to Place objects
+        validated_places = [Place(**place) for place in validated_places_data]
+
+        # 5. Return API response
         return {
             "caption": caption,
             "hashtags": hashtags,
-            "detected_locations": [place.get("name", "") for place in detected_locations],
+            "detected_locations": detected_locations,
             "validated_places": validated_places
         }
 
@@ -82,10 +73,12 @@ async def process_reel(request: ReelRequest):
         logger.error(f"Error processing reel: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ------------------ HEALTH CHECK ------------------ #
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
 
 @app.get("/")
 def home():
