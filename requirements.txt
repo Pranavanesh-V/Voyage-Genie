@@ -1,10 +1,10 @@
+# Core dependencies
 setuptools<70
 fastapi
 uvicorn[standard]
 pydantic==1.10.13
 requests
 yt-dlp
-numpy
 httpx
 opencv-python-headless
 pytesseract
@@ -12,8 +12,13 @@ ffmpeg-python
 python-multipart
 python-dotenv
 
+# Fixed NumPy version compatible with SpaCy
+numpy==1.25.2
+
+# SpaCy and model
 spacy==3.5.4
 https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.5.0/en_core_web_sm-3.5.0-py3-none-any.whl
 
+# PyTorch + Whisper
 torch==2.0.1
 openai-whisper==20231117
