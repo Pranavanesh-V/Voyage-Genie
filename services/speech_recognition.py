@@ -2,8 +2,6 @@ import os
 import logging
 from typing import Optional
 
-import whisper
-
 # ---------------- LOGGING ---------------- #
 logging.basicConfig(
     level=logging.INFO,
@@ -19,6 +17,8 @@ def get_whisper_model():
     global _model
     if _model is None:
         try:
+            logger.info("Loading Whisper model...")
+            import whisper
             _model = whisper.load_model("tiny")
             logger.info("Whisper model loaded successfully.")
         except Exception as e:
@@ -48,6 +48,9 @@ def transcribe_audio(audio_path: str) -> str:
         text = result.get("text", "").strip()
         logger.info(f"Audio transcription completed for file: {audio_path}")
         return text
+    except Exception as e:
+        logger.error(f"Whisper transcription error for file '{audio_path}': {e}")
+        return ""
 
     except Exception as e:
         logger.error(f"Whisper transcription error for file '{audio_path}': {e}")

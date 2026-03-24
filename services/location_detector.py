@@ -4,8 +4,6 @@ import logging
 from collections import Counter
 from typing import List, Dict, Optional
 
-import spacy
-
 # ---------------- CONFIG ---------------- #
 MIN_SCORE = int(os.getenv("MIN_SCORE", 4))
 
@@ -50,8 +48,12 @@ def get_nlp():
     global _nlp
     if _nlp is None:
         try:
+            logger.info("Loading SpaCy model...")
+            import spacy
             _nlp = spacy.load("en_core_web_sm")
+            logger.info("SpaCy model loaded successfully.")
         except OSError:
+            logger.error("SpaCy model not found. Run: python -m spacy download en_core_web_sm")
             raise RuntimeError("Run: python -m spacy download en_core_web_sm")
     return _nlp
 

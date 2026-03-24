@@ -2,6 +2,7 @@ import os
 import shutil
 import uuid
 import logging
+import asyncio
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -46,8 +47,6 @@ class Place(BaseModel):
 
 class ReelResponse(BaseModel):
     caption: str
-    hashtags: List[str]
-    detected_locations: List[str]
     validated_places: List[Place]
 
 
@@ -84,34 +83,43 @@ async def process_reel(request: ReelRequest, background_tasks: BackgroundTasks):
 
     try:
         # 1. Download Reel
+        logger.info("Starting video download...")
         video_path = await download_reel(request.reelUrl, session_id)
         logger.info(f"Video downloaded: {video_path}")
 
         # 2. Metadata
-        metadata = extract_metadata(request.reelUrl)
+        logger.info("Extracting metadata...")
+        metadata = await asyncio.to_thread(extract_metadata, request.reelUrl)
         caption = metadata.get("caption", "")
         hashtags = metadata.get("hashtags", [])
 
         # 3. Audio extraction & transcription
-        audio_path = get_audio_from_video(video_path, session_id)
-        transcription = transcribe_audio(audio_path)
+        logger.info("Extracting audio...")
+        audio_path = await asyncio.to_thread(get_audio_from_video, video_path, session_id)
+        logger.info("Transcribing audio...")
+        transcription = await asyncio.to_thread(transcribe_audio, audio_path)
 
         # 4. Frame extraction + OCR + Vision detection
-        frames_path = extract_frames(video_path, session_id)
-        ocr_text = extract_text_from_frames(frames_path)
-        vision_results = detect_scenes(frames_path)
+        logger.info("Extracting frames...")
+        frames_path = await asyncio.to_thread(extract_frames, video_path, session_id)
+        logger.info("Running OCR...")
+        ocr_text = await asyncio.to_thread(extract_text_from_frames, frames_path)
+        logger.info("Detecting scenes...")
+        vision_results = await asyncio.to_thread(detect_scenes, frames_path)
 
         # 5. Combine all text sources
         combined_text = f"{caption} {' '.join(hashtags)} {transcription} {ocr_text} {' '.join(vision_results)}"
-        cleaned_text = clean_text(combined_text)
+        cleaned_text = await asyncio.to_thread(clean_text, combined_text)
         logger.info(f"Cleaned text length: {len(cleaned_text)}")
 
         # 6. Detect locations
-        location_data = find_locations_in_text(cleaned_text)
+        logger.info("Detecting locations in text...")
+        location_data = await asyncio.to_thread(find_locations_in_text, cleaned_text)
         detected_locations = location_data["places"]
         location_context = location_data["context"]
 
         # 7. Validate locations
+        logger.info("Validating locations...")
         raw_places = await validate_locations(detected_locations, location_context)
         validated_places = [
             {
@@ -129,10 +137,9 @@ async def process_reel(request: ReelRequest, background_tasks: BackgroundTasks):
         # 8. Cleanup in background
         background_tasks.add_task(cleanup_temp_files, session_id)
 
+        logger.info("Processing completed successfully")
         return {
             "caption": caption,
-            "hashtags": hashtags,
-            "detected_locations": list(set(detected_locations)),
             "validated_places": validated_places
         }
 
@@ -145,9 +152,15 @@ async def process_reel(request: ReelRequest, background_tasks: BackgroundTasks):
 # ------------------ HEALTH CHECK ------------------ #
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    return {"status": "ready"}
 
 
 @app.get("/")
 def home():
     return {"message": "VoyageGenie AI backend running"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
