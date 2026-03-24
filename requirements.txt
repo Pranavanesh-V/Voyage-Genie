@@ -3,9 +3,6 @@ uvicorn[standard]
 pydantic==1.10.13
 requests
 yt-dlp
-spacy==3.5.4
-thinc==8.1.10
-blis==0.7.9
 numpy
 httpx
 opencv-python-headless
@@ -14,8 +11,15 @@ ffmpeg-python
 python-multipart
 python-dotenv
 
-# Use lighter torch (CPU only)
+# 🔥 FIXED spaCy stack (prebuilt wheels)
+spacy==3.5.4
+thinc==8.1.10
+blis==0.7.9
+
+# Optional model install via URL (no build)
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.5.0/en_core_web_sm-3.5.0-py3-none-any.whl
+
+# Torch (light)
 torch==2.0.1
 
-# Keep whisper but prevent heavy reinstall issues
 openai-whisper==20231117
