@@ -2,11 +2,11 @@ import os
 import shutil
 import uuid
 import logging
-import asyncio
-from typing import List, Optional
-
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+import json
+from pathlib import Path
+from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel
+from typing import List, Optional
 
 from config import VIDEO_DIR, AUDIO_DIR, FRAME_DIR
 from services.reel_downloader import download_reel
@@ -29,11 +29,13 @@ logger = logging.getLogger(__name__)
 # ---------------- FASTAPI ---------------- #
 app = FastAPI(title="VoyageGenie Reel Analytics API")
 
+# ---------------- JOB STORAGE ---------------- #
+JOB_RESULTS_DIR = Path("/tmp/jobs")
+JOB_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ------------------ MODELS ------------------ #
 class ReelRequest(BaseModel):
     reelUrl: str
-
 
 class Place(BaseModel):
     name: str
@@ -44,83 +46,71 @@ class Place(BaseModel):
     longitude: float
     confidence: float
 
-
-class ReelResponse(BaseModel):
-    caption: str
-    validated_places: List[Place]
-
-
-# ------------------ CLEANUP ------------------ #
+# ------------------ UTILITIES ------------------ #
 def cleanup_temp_files(session_id: str):
     for folder in [VIDEO_DIR, AUDIO_DIR, FRAME_DIR]:
         path = folder / session_id
         if os.path.exists(path):
             try:
                 shutil.rmtree(path)
-                logger.info(f"Cleaned up temp folder: {path}")
+                logger.info(f"Cleaned temp folder: {path}")
             except Exception as e:
-                logger.error(f"Failed to clean up folder {path}: {e}")
-
+                logger.error(f"Error cleaning folder {path}: {e}")
 
 def format_place_name(place):
-    name = place.get("name", "")
-    city = place.get("city", "")
-    country = place.get("country", "")
-
-    parts = [name]
-    if city:
-        parts.append(city)
-    if country:
-        parts.append(country)
-
+    parts = [place.get("name", "")]
+    if place.get("city"):
+        parts.append(place["city"])
+    if place.get("country"):
+        parts.append(place["country"])
     return ", ".join(parts)
 
+def save_job_result(session_id, result):
+    job_file = JOB_RESULTS_DIR / f"{session_id}.json"
+    with open(job_file, "w") as f:
+        json.dump(result, f)
 
-# ------------------ API ------------------ #
-@app.post("/process-reel", response_model=ReelResponse)
-async def process_reel(request: ReelRequest, background_tasks: BackgroundTasks):
-    session_id = str(uuid.uuid4())
+def load_job_result(session_id):
+    job_file = JOB_RESULTS_DIR / f"{session_id}.json"
+    if job_file.exists():
+        with open(job_file, "r") as f:
+            return json.load(f)
+    return None
 
+# ------------------ BACKGROUND PROCESS ------------------ #
+def process_reel_background(reel_url: str, session_id: str):
     try:
-        # 1. Download Reel
-        logger.info("Starting video download...")
-        video_path = await download_reel(request.reelUrl, session_id)
-        logger.info(f"Video downloaded: {video_path}")
+        logger.info(f"[{session_id}] Starting reel processing")
+
+        # 1. Download video
+        video_path = download_reel(reel_url, session_id)
+        logger.info(f"[{session_id}] Video downloaded: {video_path}")
 
         # 2. Metadata
-        logger.info("Extracting metadata...")
-        metadata = await asyncio.to_thread(extract_metadata, request.reelUrl)
+        metadata = extract_metadata(reel_url)
         caption = metadata.get("caption", "")
         hashtags = metadata.get("hashtags", [])
 
-        # 3. Audio extraction & transcription
-        logger.info("Extracting audio...")
-        audio_path = await asyncio.to_thread(get_audio_from_video, video_path, session_id)
-        logger.info("Transcribing audio...")
-        transcription = await asyncio.to_thread(transcribe_audio, audio_path)
+        # 3. Audio + transcription
+        audio_path = get_audio_from_video(video_path, session_id)
+        transcription = transcribe_audio(audio_path)
 
-        # 4. Frame extraction + OCR + Vision detection
-        logger.info("Extracting frames...")
-        frames_path = await asyncio.to_thread(extract_frames, video_path, session_id)
-        logger.info("Running OCR...")
-        ocr_text = await asyncio.to_thread(extract_text_from_frames, frames_path)
-        logger.info("Detecting scenes...")
-        vision_results = await asyncio.to_thread(detect_scenes, frames_path)
+        # 4. Frames + OCR + Vision
+        frames_path = extract_frames(video_path, session_id)
+        ocr_text = extract_text_from_frames(frames_path)
+        vision_results = detect_scenes(frames_path)
 
         # 5. Combine all text sources
         combined_text = f"{caption} {' '.join(hashtags)} {transcription} {ocr_text} {' '.join(vision_results)}"
-        cleaned_text = await asyncio.to_thread(clean_text, combined_text)
-        logger.info(f"Cleaned text length: {len(cleaned_text)}")
+        cleaned_text = clean_text(combined_text)
 
         # 6. Detect locations
-        logger.info("Detecting locations in text...")
-        location_data = await asyncio.to_thread(find_locations_in_text, cleaned_text)
+        location_data = find_locations_in_text(cleaned_text)
         detected_locations = location_data["places"]
         location_context = location_data["context"]
 
         # 7. Validate locations
-        logger.info("Validating locations...")
-        raw_places = await validate_locations(detected_locations, location_context)
+        raw_places = validate_locations(detected_locations, location_context)
         validated_places = [
             {
                 "name": format_place_name(place),
@@ -134,33 +124,46 @@ async def process_reel(request: ReelRequest, background_tasks: BackgroundTasks):
             for place in raw_places
         ]
 
-        # 8. Cleanup in background
-        background_tasks.add_task(cleanup_temp_files, session_id)
-
-        logger.info("Processing completed successfully")
-        return {
+        # 8. Save job result
+        save_job_result(session_id, {
+            "status": "completed",
             "caption": caption,
             "validated_places": validated_places
-        }
+        })
+
+        # 9. Cleanup temp files
+        cleanup_temp_files(session_id)
+        logger.info(f"[{session_id}] Processing completed successfully")
 
     except Exception as e:
+        logger.error(f"[{session_id}] Error: {e}")
+        save_job_result(session_id, {"status": "failed", "error": str(e)})
         cleanup_temp_files(session_id)
-        logger.error(f"Error processing reel: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
+# ------------------ API ENDPOINTS ------------------ #
+@app.post("/process-reel")
+async def start_reel_processing(request: ReelRequest, background_tasks: BackgroundTasks):
+    session_id = str(uuid.uuid4())
+    background_tasks.add_task(process_reel_background, request.reelUrl, session_id)
+    return {"job_id": session_id, "status": "processing"}
 
-# ------------------ HEALTH CHECK ------------------ #
+@app.get("/job-status/{job_id}")
+async def job_status(job_id: str):
+    result = load_job_result(job_id)
+    if not result:
+        return {"status": "processing"}
+    return result
+
 @app.get("/health")
 async def health_check():
     return {"status": "ready"}
-
 
 @app.get("/")
 def home():
     return {"message": "VoyageGenie AI backend running"}
 
-
+# ------------------ RUN ------------------ #
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))
+    port = int(os.environ.get("PORT", 10000))  # Render uses $PORT
     uvicorn.run(app, host="0.0.0.0", port=port)
